@@ -70,3 +70,8 @@ acs-*.bib
 *.nav
 *.pre
 *.snm
+
+
+# Added by cargo
+
+/target

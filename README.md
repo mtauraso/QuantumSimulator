@@ -7,9 +7,11 @@ Deliverables would be program, source code, readme & getting started level docum
 Decisions:
 - Rust is the base language
 - I'm using QASM-rust https://github.com/libtangle/qasm-rust (Backup plan: Openqasm) for parsing so as not to waste time
+- Nalgebra for linal (and num/ndarray i think as deps?)
 - Input will be OpenQASM 2.0 https://github.com/openqasm/openqasm/tree/OpenQASM2.x (and the paper in my zotero)
 - Readme level docs and "how to run" will be on github repo, will directly link PDF
 - Final paper with citations will be in this repo as a tex file. pdf will include hyperlink support
+
 
 Program flow:
 - Read in the qasm file
@@ -26,3 +28,11 @@ Open questions:
 
 Out of scope:
 - Input circuit GUI
+
+TODO:
+- Get rust to hello world
+- Read in a quasm file and parse it
+- Load the linear algebra library and multiply matricies
+- Read the QASM spec, and consider user interface
+- Write down the most cut down basic user interface that would work
+- Write down 3-5 immediate extensions on that basic form. Ideally no more than 1 level of "A builds on B" type dependencies. Once basic is done, 3 ideas should be actionable
