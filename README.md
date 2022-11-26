@@ -30,7 +30,6 @@ Out of scope:
 - Input circuit GUI
 
 TODO:
-- Separate out the visitor logic into separate files
 - Use the visitor logic to create registers
 - Data model the state vector of all quantum registers
 - Use the visitor logic to evolve quantum registers for basic test program
