@@ -6,7 +6,7 @@ Deliverables would be program, source code, readme & getting started level docum
 
 Decisions:
 - Rust is the base language
-- I'm using QASM-rust https://github.com/libtangle/qasm-rust (Backup plan: Openqasm) for parsing so as not to waste time
+- Not using QASM-rust because it doesn't support parsing all of QASM 2.0. Openqasm's AST is much nicer, and supports the expression language implicit in QASM
 - Nalgebra for linal (and num/ndarray i think as deps?)
 - Input will be OpenQASM 2.0 https://github.com/openqasm/openqasm/tree/OpenQASM2.x (and the paper in my zotero)
 - Readme level docs and "how to run" will be on github repo, will directly link PDF
@@ -30,9 +30,14 @@ Out of scope:
 - Input circuit GUI
 
 TODO:
-- Get rust to hello world
-- Read in a quasm file and parse it
-- Load the linear algebra library and multiply matricies
+- Separate out the visitor logic into separate files
+- Use the visitor logic to create registers
+- Data model the state vector of all quantum registers
+- Use the visitor logic to evolve quantum registers for basic test program
+- Look through spec and implement all (implementable) primitives
+
 - Read the QASM spec, and consider user interface
+	- An idea: Circuit is displayed graphically, with ability to expand/contract the gates. Circuit input is the openqasm file, graphic output is only a viewer of circuit and results 
+
 - Write down the most cut down basic user interface that would work
 - Write down 3-5 immediate extensions on that basic form. Ideally no more than 1 level of "A builds on B" type dependencies. Once basic is done, 3 ideas should be actionable
