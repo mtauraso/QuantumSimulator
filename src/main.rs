@@ -58,7 +58,8 @@ fn openqasm_parse() {
     }
 
     let register = QuantumRegister::from_program(&program);
-    println!("{:?}",register);
+    println!("{}",register.to_string());
+    //register.foo();
 
 
     let mut l = oq::translate::Linearize::new(eval::GatePrinter,100);

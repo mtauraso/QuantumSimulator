@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use num::{complex::Complex32, ToPrimitive};
+use std::{collections::HashMap};
+use num::{complex::Complex32, ToPrimitive, Zero};
 use openqasm as oq;
 use oq::{ProgramVisitor, Program};
-use nd::{ArrayD,IxDyn};
+use nd::{ArrayD,IxDyn, Dimension};
 
 
 // TODO:
@@ -62,6 +62,34 @@ impl QuantumRegister {
         qreg.amplitudes[zero_state.as_slice()] = Complex32::new(1.0,0.0);
 
         qreg
+    }
+
+    pub fn to_string(& self) -> String{
+        let mut out = String::new();
+
+        for (indicies,amplitude) in self.amplitudes.indexed_iter() {
+            if ! Complex32::eq(amplitude, &Complex32::zero()) {
+
+                if out.len() > 0 {
+                    out.push_str(" + ")
+                }
+
+                if amplitude.im.is_zero() {
+                    out.push_str(format!("{} |", amplitude.re).as_str());
+                } else if amplitude.re.is_zero() {
+                    out.push_str(format!("{} i |", amplitude.im).as_str());
+                } else {
+                    out.push_str(format!("({} + {} i)|", amplitude.re, amplitude.im).as_str());
+                }
+
+                for bit in indicies.as_array_view() {
+                    out.push_str(format!("{}", bit).as_str());
+                }
+                out.push_str(">");
+                //println!("{:?} {:?}", indicies.as_array_view(), amplitude);
+            }
+        }
+        out
     }
 }
 
