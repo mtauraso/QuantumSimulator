@@ -11,9 +11,11 @@ include "qelib1.inc";
 
 
 qreg q[2];
+qreg j[2];
 creg c[1];
 
 h q[0];
 CX q[0], q[1];
+CX j, q;
 
 measure q[1] -> c[0];

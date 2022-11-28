@@ -3,16 +3,14 @@ extern crate ndarray as nd;
 extern crate num;
 
 mod register;
-mod eval;
 
 use std::f64::consts::FRAC_PI_2;
 
 use num::complex::Complex64;
-use oq::GenericError;
-use oq::ProgramVisitor;
+use oq::{GenericError,ProgramVisitor, translate::Linearize};
 use nd::Array;
 
-use register::QuantumRegister;
+use register::{QuantumRegister, QuantumRegisterGateWriter};
 
 
 fn main() {
@@ -22,7 +20,7 @@ fn main() {
 }
 
 fn ndarray_test() {
-    let dim = 12;
+    let dim = 5;
     let a = Complex64::from_polar( 1.0, FRAC_PI_2);
     let b = Complex64::from_polar( 1.0, FRAC_PI_2);
     let aa = Array::from_elem( (dim, dim), a);
@@ -57,13 +55,20 @@ fn openqasm_parse() {
         panic!("Cannot continue due to type errors above.");
     }
 
-    let register = QuantumRegister::from_program(&program);
-    println!("{}",register.to_string());
-    //register.foo();
+    // Run the program
+    let mut register = QuantumRegister::new();
+    let mut linearizer = Linearize::new(
+        QuantumRegisterGateWriter::new(&mut register), 
+        usize::MAX);
+    linearizer.visit_program(&program).to_errors().unwrap();
 
+    // Print the final state
+    println!("Register2: {}", register.to_string());
 
-    let mut l = oq::translate::Linearize::new(eval::GatePrinter,100);
-    l.visit_program(&program).to_errors().unwrap();
+    // Print the gates
+    // println!("Visiting all the gates:");
+    // let mut l = Linearize::new(eval::GatePrinter,100);
+    // l.visit_program(&program).to_errors().unwrap();
 
 }
 
