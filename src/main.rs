@@ -1,18 +1,36 @@
+extern crate openqasm as oq;
+extern crate ndarray as nd;
+extern crate num;
 
-extern crate openqasm;
-extern crate approx;
-extern crate nalgebra as na;
 mod register;
 mod eval;
 
-use openqasm as oq;
+use std::f64::consts::FRAC_PI_2;
+
+use num::complex::Complex64;
 use oq::GenericError;
 use oq::ProgramVisitor;
+use nd::Array;
+
+use register::QuantumRegister;
 
 
 fn main() {
     println!("Hello, world!");
+    ndarray_test();
     openqasm_parse();
+}
+
+fn ndarray_test() {
+    let dim = 12;
+    let a = Complex64::from_polar( 1.0, FRAC_PI_2);
+    let b = Complex64::from_polar( 1.0, FRAC_PI_2);
+    let aa = Array::from_elem( (dim, dim), a);
+    let bb = Array::from_elem( (dim, dim), b);
+
+    let cc = aa*bb;
+
+    println!("{:?}", cc);
 }
 
 fn openqasm_parse() {
@@ -39,7 +57,8 @@ fn openqasm_parse() {
         panic!("Cannot continue due to type errors above.");
     }
 
-    register::RegFinder.visit_program(&program).unwrap();
+    let register = QuantumRegister::from_program(&program);
+    println!("{:?}",register);
 
 
     let mut l = oq::translate::Linearize::new(eval::GatePrinter,100);
@@ -53,24 +72,3 @@ fn _openqasm_print_errors(errors: oq::Errors) {
         println!("{:?}", error);
     }
 }
-
-
-// use approx::{relative_eq};
-// use na::{Vector3, Rotation3};
-// fn nalgebra_test() {
-
-// // TODO: nalgebra might be overkill
-
-//     let axis  = Vector3::x_axis();
-//     let angle = 1.57;
-//     let b     = Rotation3::from_axis_angle(&axis, angle);
-
-//     relative_eq!(b.axis().unwrap(), axis);
-//     relative_eq!(b.angle(), angle);
-
-//     println!("");
-//     println!("{:?}", b);
-// }
-
-
-
