@@ -26,9 +26,9 @@ fn ndarray_test() {
     let aa = Array::from_elem( (dim, dim), a);
     let bb = Array::from_elem( (dim, dim), b);
 
-    let cc = aa*bb;
+    let _cc = aa*bb;
 
-    println!("{:?}", cc);
+    //println!("{:?}", cc);
 }
 
 fn openqasm_parse() {
@@ -63,7 +63,7 @@ fn openqasm_parse() {
     linearizer.visit_program(&program).to_errors().unwrap();
 
     // Print the final state
-    println!("Register2: {}", register.to_string());
+    println!("Final Amplitudes: {}", register.to_string());
 
     // Print the gates
     // println!("Visiting all the gates:");
