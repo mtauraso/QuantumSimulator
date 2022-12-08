@@ -3,6 +3,7 @@ extern crate ndarray as nd;
 extern crate num;
 
 mod register;
+mod check;
 
 use std::f64::consts::FRAC_PI_2;
 
@@ -11,6 +12,8 @@ use oq::{GenericError,ProgramVisitor, translate::Linearize};
 use nd::Array;
 
 use register::{QuantumRegister, QuantumRegisterGateWriter};
+
+use crate::check::CheckGateWriter;
 
 
 fn main() {
@@ -53,6 +56,11 @@ fn openqasm_parse() {
         errors.print(&mut cache).unwrap();
         //openqasm_print_errors(errors);
         panic!("Cannot continue due to type errors above.");
+    }
+
+    if let Err(error) = Linearize::new(CheckGateWriter{}, usize::MAX).visit_program(&program) {
+        error.to_report().print(&mut cache).unwrap();
+        panic!("Cannot continue due to errors above");
     }
 
     // Run the program
