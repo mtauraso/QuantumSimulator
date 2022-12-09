@@ -1,0 +1,189 @@
+% ****** Start of file apssamp.tex ******
+%
+%   This file is part of the APS files in the REVTeX 4.2 distribution.
+%   Version 4.2a of REVTeX, December 2014
+%
+%   Copyright (c) 2014 The American Physical Society.
+%
+%   See the REVTeX 4 README file for restrictions and more information.
+%
+% TeX'ing this file requires that you have AMS-LaTeX 2.0 installed
+% as well as the rest of the prerequisites for REVTeX 4.2
+%
+% See the REVTeX 4 README file
+% It also requires running BibTeX. The commands are as follows:
+%
+%  1)  latex apssamp.tex
+%  2)  bibtex apssamp
+%  3)  latex apssamp.tex
+%  4)  latex apssamp.tex
+%
+\documentclass[%
+ reprint,
+%superscriptaddress,
+%groupedaddress,
+%unsortedaddress,
+%runinaddress,
+%frontmatterverbose, 
+%preprint,
+%preprintnumbers,
+%nofootinbib,
+%nobibnotes,
+%bibnotes,
+ amsmath,amssymb,
+ aps,
+%pra,
+%prb,
+%rmp,
+%prstab,
+%prstper,
+%floatfix,
+]{revtex4-2}
+
+\usepackage{graphicx}% Include fibonacci files
+\usepackage{dcolumn}% Align table columns on decimal point
+\usepackage{bm}% bold math
+%\usepackage{hyperref}% add hypertext capabilities
+%\usepackage[mathlines]{lineno}% Enable numbering of text and display math
+%\linenumbers\relax % Commence numbering lines
+
+%\usepackage[showframe,%Uncomment any one of the following lines to test 
+%%scale=0.7, marginratio={1:1, 2:3}, ignoreall,% default settings
+%%text={7in,10in},centering,
+%%margin=1.5in,
+%%total={6.5in,8.75in}, top=1.2in, left=0.9in, includefoot,
+%%height=10in,a5paper,hmargin={3cm,0.8in},
+%]{geometry}
+
+
+% Where are the images kept?
+\graphicspath{ {./images/} }
+
+% Uncomment these to remove figures for page checking
+%\renewcommand{\includegraphics}[2][]{}
+%\renewcommand{\caption}[2][]{}
+
+\begin{document}
+
+\preprint{APS/123-QED}
+
+\title{Statevector Based Quantum Circuit Simulator}
+\author{Michael Tauraso}
+% \altaffiliation[Also at ]{Physics Department, XYZ University.}%Lines break automatically or can be forced with \\
+%\author{Second Author}%
+% \email{Second.Author@institution.edu}
+\affiliation{%
+ University of Washington
+}%
+
+%\collaboration{MUSO Collaboration}
+%\noaffiliation
+
+%\author{Charlie Author}
+% \homepage{http://www.Second.institution.edu/~Charlie.Author}
+%\affiliation{
+% Second institution and/or address\\
+% This line break forced% with \\
+%}%
+%\affiliation{
+% Third institution, the second for Charlie Author
+%}%
+%\author{Delta Author}
+%\affiliation{%
+% Authors' institution and/or address\\
+% This line break forced with \textbackslash\textbackslash
+%}%
+%
+%\collaboration{CLEO Collaboration}%\noaffiliation
+
+\date{\today}% It is always \today, today,
+             %  but any date may be explicitly specified
+
+\begin{abstract}
+A state based quantum computer simulator written in the Rust programming language for windows computers, which takes quantum circuit input written in OpenQASM 2.0. It supports all quantum behavior defined in the specification, including the full scope of expressable quantum/classical interaction.\end{abstract}
+
+%\keywords{Suggested keywords}%Use showkeys class option if keyword
+                              %display desired
+\maketitle
+
+%\tableofcontents
+
+
+%XCXC TODOS
+% Normalize on Floquet, Hamiltonian, topological[ly], quasiperiodic
+% Check that the introduction and conclusion are solid
+% Remove the template gunk from the bottom.
+% Look for typos and spelling
+
+\section{\label{sec:level1}Introduction}
+This project arose out of a desire to have a desktop calculator of sorts for analyzing the correctness of circuits on homework assignments, as well as a platform for exploring the various ways that error can enter quantum circuits. After exploring several online quantum circuit simulators, and seeing their limitations I became interested in how difficult it was to construct one, and what sorts of trade-offs I might encounter in the attempt.
+
+
+\section{\label{sec:level1} Technology Choice}
+Quantum simulations are usually limited by the amount of memory available to store amplitude information. In order to be able to have some direct contact with this issue, I decided to use Rust as the implementation language. Rust is similar to other systems programming languages like C/C++, and Fortran in that it allows the programmer to have some very direct access to the usage of memory, and supports a strong type system. The downside of using most systems languagesis that in getting greater control over what the computer is doing, you give up the ability to program higher level concepts without writing a lot of code. Systems languges often make it easy to introduce bugs that are difficult to track down, or only occur in a small number of runtime scenarios. Rust has several features that address these issues, borrowed from functional programming languages like SML/NJ, OCAML, and Haskell. Among these features that were useful on this project: Type inference saved many keystrokes, and the borrow checker, and memory safety types saved many headaches when manipulating n-dimensional arrays.
+
+Since the focus of this project is simulating quantum computation, I decided to use libraries to perform steps like parsing and translation of the OpenQASM language, Linear algebra/Tensor operations, User interface, and error handling. With the exception of the parsing and translation library for OpenQASM, all of these libraries are general purpose utilities without any particular focus on quantum computing. 
+
+A excellent and readable summary of the OpenQASM language can be found in the language spec/cite{crossOpen2017}. The 2.0 version of OpenQASM has minimal features of traditional programming languages; however, it offers a machine readable way to implement any quantum circuit. The language requires the underlying quantum hardware to be able to perform two gates: a controlled not, and a unitary rotation gate defined in the paper. It allows more complex gates or circuits to be defined in terms of those basic gates in a recursive manner. It also supports expressing non-deferred measurement and classical control of quantum operations. Since 2017 OpenQASM has been extended to a 3.0 version that includes support for many more classical programming control flow constructs. The grammar of OpenQASM 3.0 is still in flux, and represents a much larger implementation target; however, the base quantum gates are the same as 2.0\cite{crossOpenQASM}. Given that the focus is on quantum circuits, only OpenQASM 2.0 is imlemented.
+
+\section{\label{sec:level1} Parsing and Translation}
+% TODO: Explain what the library is doing for you here
+
+\section{\label{sec:level1} \label{qubits} Quantum Bits}
+The approach taken for this simulator was relatively simple in the sense that it is unsophisticated, and one of the more naieve possible approaches. The program keeps record of every possible complex amplitude, so the space complexity is $\mathcal{O}(2^n)$ where n is the total number of bits across all distinct registers defined in the quantum circuit. Classical bits are included in this count, which allows a straightforward implementation of remixing as we will see.
+
+The usual manner of working out a quantum circuit by hand uses Dirac notation to define finite-dimensional state vectors and matrix transitions in the Hilbert space of the quantum computer. This simulator represents the same amplitudes as tensor components more in the manner that General Relativity is exposited. The amplitudes that describe the quantum computer's state are a rank-$n$ tensor with complex-valued components where each index of the tensor can be $0$ or $1$\cite{kattemolleQuantum}. Each index of the tensor corresponds to a quantum bit. Each quantum operation is a tensor contraction, which sums across the amplitudes associated with each quantum bit involved in the operation. In this paper I will be following the convention that ket vectors correspond to a lower tensor index, and bra vectors correspond to an upper index. I will also be using greek letters $\alpha, \beta, ..$ for quantum bits, and latin letters $u, v,...$ for classical bits.
+
+The Hadamard gate is traditionally represented as the matrix $\frac{1}{\sqrt{2}}\big(\begin{smallmatrix}
+1 & 1\\
+1 & -1\\
+\end{smallmatrix}\big)$, which is equivalently written in dirac notation as $\frac{1}{\sqrt{2}} \big( |0\rangle\langle0| + |0\rangle\langle1| + |1\rangle\langle0| - |1\rangle\langle1|\big)$ In the tensor notation, the hadamard would be ${H^{\alpha}}_{\beta}$ where ${H^{0}}_{0} = {H^{1}}_{0} = {H^{0}}_{1} = \frac{1}{\sqrt{2}}$ and ${H^{1}}_{1} = -\frac{1}{\sqrt{2}}$. Likewise a two qubit quantum computer with the first bit initialized to one, would have the amplitude matrix $A_{\alpha\beta}$ where $A_{10} = 1$ and all other components are zero, corresponding to the state $\Psi = |10\rangle$ in Dirac notation with the implicit tensor product. In order to compute a hadamard of the first qubit, the simulator contracts the lower index of the qubit (ket vectors) with the upper index of the Hadamard tensor (bra vectors). Using the einstein summation convention, the new amplitudes are $${A^\prime}_{\alpha\beta} = A_{\gamma\beta} {H^{\gamma}}_{\alpha}.$$ This new set of amplitudes has two lower indicies, $\alpha$ and $\beta$ which correspond to the new amplitudes for the two qubits after the Hadamard. The only non-zero components of $A^{\prime}$ are ${A^{\prime}}_{00} = \frac{1}{\sqrt{2}}$ and ${A^{\prime}}_{10} = -\frac{1}{\sqrt{2}}$, which correspond to the dirac state $\Psi^{\prime} = \frac{1}{\sqrt{2}} (|00\rangle - |10\rangle)$, which is exactly what we would expect.
+
+This formalism works similarly for multiple qubit gates. A CNOT gate can be represented by the tensor ${C^{\alpha\beta}}_{\gamma\delta}$ where ${C^{00}}_{00} = {C^{01}}_{01} = {C^{10}}_{11} = {C^{11}}_{10} = 1$ and all other components are zero. In this exposition it tempting to read the upper indicies as the ``input'' bit patterns, and the lower indicies as the ``output'' bit pattern; however, this only works because CNOT does not mix our basis states. The order of contraction of the CNOT tensor with our amplitudes controls which bit is the control bit and which is the target bit. We can take the prime state above and evolve it further by applying a CNOT targetting the second qubit with the first qubit as control. The resulting amplitudes can be written $${A^{\prime\prime}}_{\alpha\beta} = {A^\prime}_{\gamma\delta}{C^{\gamma\delta}}_{\alpha\beta}.$$ The only non-zero components are ${A^{\prime\prime}}_{00} = \frac{1}{\sqrt{2}}$ and ${A^{\prime\prime}}_{11} = -\frac{1}{\sqrt{2}}$, which corresponds to the bell state we would expect: $\Psi^{\prime\prime} = \frac{1}{\sqrt{2}} (|00\rangle - |11\rangle)$. Note that reversing the order of the $\gamma$ and $\delta$ indicies one one tensor in the sum above results in no change to the amplitudes, which is what we would expect if the control and target bits of the CNOT gate were reversed.
+
+This method is easy to extend mechanically to many more qubits, as is needed to accomodate large circuits. In the quantum simulator \texttt{ndarray} and \texttt{einsum} packages are used to perform these tensor contractions, and the examples above follow how the two builtin gates \texttt{CX} and \texttt{U} are implemented in the simulation. The functions \texttt{apply\_u}, and \texttt{apply\_cx} in \texttt{src/register.rs} implement the mathematics of these gates. 
+
+This formalism can also be extended to perform both measurement and the remixing of classical bits back in to quantum bits, without falling back to a sampling approach for measurement.
+
+%From a technology perspective, it is notable that significant development is occurring in these types of libraries in order to further machine learning and artificial intelligence development, which is currently extremely well funded by private sources. This technique allows one to use any underlying optimizations present in the linear algebra libraries. Since the tensor contractions and sparseness of the data are directly available to the library, it is possible to leave the identification of things like entangled vs non-entangled states to the library
+
+\section{\label{sec:level1} Measurement}
+When qubits are measured, there are many potential things that can mean in a simulation context. The desired outcome may be probabilities for various bit patterns, post-measurement selection of certain bit patterns. The circuit may go on to use of a measured bit to control a quantum operation. As we have seen on the homework, classical control of quantum gates, can replicate a quantum gate given certain input states. OpenQASM even supports doing multiple measurements into the same classical bit, where the earlier measurements are no longer present in the circuit at the end of execution time. For the sake of modularity, it is desirable to both separate the evolution of the quantum circuit and measurement from the format that the measurement is surfaced in the interface. It is also desirable to have an evolution algorithm that can handle even the more complex circuit cases.
+
+In order to achieve these objectives, measurement and classical bits are implemented in the same tensor formalism used for quantum operations. Each tensor of amplitudes is extended with additional indicies corresponding to the value of classical bit registers defined in the OpenQASM input file. The OpenQASM \texttt{measure} statement can occur at any point in the program, and it measures a quantum bit on to a classical bit. In the simulator we begin by projecting the full amplitude state onto each of the basis states for the qubit we are measuring, and summing over the values of the cbit we are overwriting. This yields two tensors with rank one less than the total number of bits in the computer (classical and quantum). Each of these tensors is then set equal to the slice of amplitudes where the classical bit is the corresponding value.
+
+Returning to the example from Section \ref{qubits} and dropping the primes, consider the state $\Psi = \frac{1}{\sqrt{2}} (|00\rangle - |11\rangle)$ which will be represented by the tensor $A_{u \alpha\beta }$. The $u$ index is a classical bit set equal to zero, such that the amplitude components are all zero except for $A_{000} = \frac{1}{\sqrt{2}}$ and $A_{011} = -\frac{1}{\sqrt{2}}$. In order to measure the first qubit, we'll start by projecting across the zero and one basis states. ${{P_{(0)}}^{\alpha}}_{\beta}$ and ${{P_{(1)}}^{\alpha}}_{\beta}$ will be the respective projection tensors, such that the only nonzero components are ${{P_{(0)}}^{0}}_0 = {{P_{(1)}}^{1}}_1 = 1$.  The two projected amplitudes will also be summed across the possible initial values of the classical bit:
+
+\begin{align*} 
+A_{(0)\alpha\beta}  &= \big(A_{0 \gamma\beta} + A_{1 \gamma\beta}\big) {{P_{(0)}}^{\gamma}}_{\alpha} \\
+A_{(1)\alpha\beta}  &= \big(A_{0 \gamma\beta} + A_{1 \gamma\beta}\big) {{P_{(1)}}^{\gamma}}_{\alpha}
+\end{align*}
+The additional summing over the two values of the classical bit is necessary in the case where the classical bit was measured previously. Since OpenQASM does not specify selection rules base on measurement, when a cbit is overwritten by quantum information, we need to take into account both possible qubit states that could lead to that outcome. 
+
+The evolved amplitude tensor is constructed by assigning the projected amplitudes to the relevant slices such that ${A^\prime}_{0\alpha\beta} = A_{(0)\alpha\beta}$ and ${A^\prime}_{1\alpha\beta} = A_{(1)\alpha\beta}$. After the measurement, the overall amplitude tensor has the same meaning it had before: ${A^\prime}_{0 \alpha\beta}$ are the amplitudes of the qubits $\alpha$ and $\beta$ in the case where the classical bit $u$ was measured to be $|0\rangle$, and likewise for ${A^\prime}_{1 \alpha\beta}$.
+
+These states retain their normalization across all possible cbit values, as if they were also qubits. The simulator uses these post measurement amplitudes to answer probability questions. After the measurement ${A^\prime}_{0 \alpha\beta}$ is the projection where the $\alpha$ qubit is in state $|0\rangle$. The probability of this outcome is simply the squared norm ${A^\prime}_{0 \alpha\beta}{A^\prime}^{0 \alpha\beta} = \frac{1}{2}$. Note that following the convention for mapping upper and lower indicies to dirac notation, ${A^\prime}^{u \alpha\beta}  = ({A^\prime}_{u \alpha\beta})^{\ast}$. Therefore the contraction above will always be real. 
+
+Because all probabilities computed this way are normalized to cover all possible outcomes from running the circuit, conditional probabilities can be assembled from them by dividing the probability representing the outcome of interest by the probability for the condition. 
+
+The code that performs the amplitude updates associated with measurement is in the \texttt{apply\_measure} function in \texttt{src/register.rs}, and the computation of squared norms is performed in the \texttt{probability} and \texttt{norm\_sqr}  functions of that same file.
+
+\section{\label{sec:level1} Classical Control}
+
+
+% The \nocite command causes all entries in a bibliography to be printed out
+% whether or not they are actually referenced in the text. This is appropriate
+% for the sample file to show the different styles of references, but authors
+% most likely will not want to use it.
+\nocite{*}
+
+\bibliography{QuantumSimulator}% Produces the bibliography via BibTeX.
+
+\end{document}
+
+
+
+
+
+%
+% ****** End of file apssamp.tex ******
