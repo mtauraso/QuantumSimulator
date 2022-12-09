@@ -18,7 +18,8 @@ use ndarray_einsum_beta::*;
 // First round implementation is that we get a multidimensional 2x2x2x... tensor from ndarray of complex amplitudes
 // Then gate ops are all contractions on the tensor
 // See here: https://www.kattemolle.com/other/QCinPY.html
-// I have extended this method a bit to deal with cbits
+// I have extended this method a bit to deal with cbits, but it is the same basic idea.
+//
 // The layout of tensor indicies for N qubits and M cbits is: [qubit0, ..., qubitN, cbit0, ..., cbitM]
 // All tensor contraction operations put the tensor indicies back in this state when they are done.
 #[derive(Debug)]
@@ -172,8 +173,8 @@ impl QuantumRegister {
             &u_matrix, 
             &self.amplitudes, 
             &[Axis(1)],
-            &[Axis(target_qubit)]
-        ).permuted_axes(IxDyn(axis_permutation.as_slice()));
+            &[Axis(target_qubit)])
+        .permuted_axes(IxDyn(axis_permutation.as_slice()));
 
         self.amplitudes = Box::new(amplitude_result);
 
@@ -268,6 +269,57 @@ impl QuantumRegister {
         println!("{}", self.to_string());
     }
 
+    
+   
+    // what's the interface for conditional probaility requests?
+    //
+    // User tells us what bit values are (across q and c bits?). Each bit is pinned to 0,1 or is unpinned, 
+    // and then you can ask about any bits you didn't pin, but the ask has to have a value for each of those bits
+    // 
+    // How to encode this?
+    // For the condition: Option on each bit Some(0), Some(1), or None
+    // For the ask: Option on each bit Some(0), Some(1), or None
+    // 
+    // Algorithm:
+    //   Slice amplitudes such that condition Some() parts are satisfied, norm sq across all others => Store as the denominator
+    //     This is a probability, that the condition is satisfied given the circut executes
+    //   Slice amplitudes such that condition and question Some() parts are satisfied, norm across all others => Store as numerator
+    //     This is a probability that the configuration exists given the circuit executes
+    //
+    
+
+    // This is the core operation for converting amplitudes to probabilities 
+    // it pins a bunch of c/qubit values, this part does not distinguish
+    // but caller must pass them in the right order, and then we do the normsquared 
+    // operation across all of them.
+    // Normalization is such that no values are pinned by caller, it should
+    // always return 1
+    pub fn probability(& self, pinned_values: Vec<Option<bool>>) -> f32 {
+        // Slice amplitudes down to only the relevant values
+        let mut view = self.amplitudes.view();
+        let mut offset:usize = 0;
+        for pinned_value in pinned_values {
+            match pinned_value {
+                // For true/false change our slice to be along that index being the desired value
+                Some(true) => {view.collapse_axis(Axis(offset), 1);},
+                Some(false) => {view.collapse_axis(Axis(offset), 0);},
+                // For none we leave the index alone and deal with the next index
+                None => {offset += 1;},
+            }
+            println!("{:?}", view);
+        }
+
+        // Now view is an indexed object that lacks all the indicies that were pinned by caller
+        // So we take the squared norm and return it.
+        Self::norm_sqr(&view)
+    }
+
+    fn norm_sqr<T: Num + Clone> (amplitudes:&ArrayViewD<Complex<T>>) -> T {
+        amplitudes.fold(T::zero(), |accum:T, elem:&Complex<T>| -> T{
+            accum + elem.norm_sqr()
+        })
+    }    
+
     pub fn to_string(& self) -> String{
         Self::to_string_internal(&(*self.amplitudes).view())
     }
@@ -313,11 +365,7 @@ impl QuantumRegister {
 }
 
 
-fn _norm_sqr<T: Num + Clone> (amplitudes:&ArrayD<Complex<T>>) -> T {
-    amplitudes.fold(T::zero(), |accum:T, elem:&Complex<T>| -> T{
-        accum + elem.norm_sqr()
-    })
-}
+
 
 
 #[derive(Debug)]

@@ -73,6 +73,8 @@ fn openqasm_parse() {
     // Print the final state
     println!("Final Amplitudes: {}", register.to_string());
 
+    println!("Probability cbit is false: {:.3}",register.probability(vec![None, None, None]));
+
     // Print the gates
     // println!("Visiting all the gates:");
     // let mut l = Linearize::new(eval::GatePrinter,100);
