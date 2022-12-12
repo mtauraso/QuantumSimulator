@@ -1,7 +1,8 @@
+use ndarray as nd;
 use num::{
     complex::Complex32, 
     complex::Complex,
-    Zero, 
+    Zero, One,
     Rational64,
     traits::{CheckedAdd, CheckedSub,CheckedDiv}, Num
 };
@@ -9,9 +10,9 @@ use openqasm as oq;
 use oq::{
     translate::{GateWriter, Value}, 
     ast::Symbol};
-// use nd::{ArrayD,IxDyn, Dimension};
 use nd::prelude::*;
 use ndarray_einsum_beta::*;
+use approx::*;
 
 
 // This is actually all the registers
@@ -25,11 +26,22 @@ use ndarray_einsum_beta::*;
 #[derive(Debug)]
 pub struct QuantumRegister {
     amplitudes: Box<ArrayD<Complex32>>,
-    bit_count: usize,
+
+    // used for counting indicies
     qubit_count: usize,
     cbit_count: usize,
+    hidden_qubit_count: usize,
+
+    // Used for tracking cbit state
+    cbit_values: Vec<Option<bool>>,
+
+    // Currently unused
     qubit_names: Vec<Symbol>,
     cbit_names: Vec<Symbol>,
+
+    // Used for conditionals
+    amplitudes_save: Option<Box<ArrayD<Complex32>>>,
+    pinned_values: Option<Vec<Option<bool>>>,
 }
 
 impl QuantumRegister {
@@ -37,30 +49,43 @@ impl QuantumRegister {
         // Actual initialization occurs in gatewriter initialize 
         QuantumRegister { 
             amplitudes: Box::new(ArrayD::zeros(IxDyn(&[2]))),
-            bit_count: 0,
+            cbit_values: Vec::new(),
+            amplitudes_save: None,
+            pinned_values: None,
             qubit_count: 0, 
             cbit_count: 0,
+            hidden_qubit_count: 0,
             qubit_names: Vec::new(), 
             cbit_names: Vec::new(), 
         }
     }
 
+    #[allow(dead_code)]
+    pub fn amplitudes(&self) -> ArrayViewD<Complex32> { self.amplitudes.view() }
+
+    pub fn bit_count(&self) -> usize { self.qubit_count + self.cbit_count + self.hidden_qubit_count }
+
+    #[allow(dead_code)]
+    pub fn visible_bit_count(&self) -> usize{ self.qubit_count + self.cbit_count }
 
     // Called from gatewriter when the number of bits is available
     fn initialize(&mut self, qubit_names: Vec<Symbol>, cbit_names: Vec<Symbol>) {
         self.qubit_count = qubit_names.len();
         self.cbit_count = cbit_names.len();
+        self.hidden_qubit_count = 0;
         self.qubit_names = qubit_names;
         self.cbit_names = cbit_names;
-        self.bit_count = self.qubit_count + self.cbit_count;
 
-        let tensor_shape = vec![2; self.bit_count];
+        let tensor_shape = vec![2; self.bit_count()];
         self.amplitudes = Box::new(ArrayD::zeros(tensor_shape));
 
         // Set the |0000...0> state only
         // Also set all classical bits to zero
-        let zero_state = vec![0; self.bit_count];
+        let zero_state = vec![0; self.bit_count()];
         self.amplitudes[zero_state.as_slice()] = Complex32::new(1.0,0.0);
+
+        self.cbit_values = vec![Some(false); self.cbit_count];
+
         println!("{}", self.to_string());
     }
 
@@ -98,9 +123,9 @@ impl QuantumRegister {
 
         // Construct the permutation of axes we'll need to un-permute the result of the
         // tensor dot product below
-        let mut axis_permutation = Vec::with_capacity(self.bit_count);
+        let mut axis_permutation = Vec::with_capacity(self.bit_count());
         let mut offset = 2;
-        for axis in num::range(0,self.bit_count){
+        for axis in num::range(0,self.bit_count()){
             axis_permutation.push(
                 if axis == control_qubit { offset -= 1; 0} 
                 else if axis == target_qubit { offset -= 1; 1}
@@ -158,9 +183,9 @@ impl QuantumRegister {
 
         // Construct the permutation of axes we'll need to un-permute the result of the
         // tensor dot product below
-        let mut axis_permutation = Vec::with_capacity(self.bit_count);
+        let mut axis_permutation = Vec::with_capacity(self.bit_count());
         let mut offset = 1;
-        for axis in num::range(0,self.bit_count){
+        for axis in num::range(0,self.bit_count()){
             axis_permutation.push(
                 if axis == target_qubit { offset -= 1; 0}
                 else {axis + offset }
@@ -182,24 +207,26 @@ impl QuantumRegister {
 
     }
 
-
-    // The simple way to keep this flexible is to treat the cbits just like they are qubits
-    // Lets say you have a = cbit and b,c = qubits amplitudes are A_abc
-    // Lets say you entangle b and c so your whole amplitude circus is in A_0bc because a is set to zero
-    // When you measure qubit b into cbit a A_1bc becomes the projection of b/c state onto b=1 b is in |1> eignenstate
-    // A_0bc becomes the projection of b/c state into b=0 and b is in |0> eigenstate
-    // You can still hold everything in A_abc
-    // Quantum gates work as before because you can still contract the amplitudes in b/c no matter that you have multiple copies
-    // depending on what a is. The summation in the contraction still sums over those.
-    // Classical "if" gates work by only manipulating a slice where the cbits have the desired values
+    // Handling a measurement:
+    // First determine if the target cbit is zero or one
+    //      If the cbit is zero we do not need a hidden bit
+    //      If the cbit is one we also do not need a hidden bit, but need to swap 0,1 or correct this later...?
+    // If we need a hidden bit, we create one at the end, and then swap the index for the used cbit to the end
+    //
+    // At this point the bit at the cbit's index is zero
+    //
+    // We then proceed to do our 0 and 1 projection measurements, removing the cbit index appropriately
+    // 
+    // Then we paste in the projected amplitudes holding the cbit axis equal to whichever projection
+    // we are working with
     fn measure(&mut self, from_qubit:usize, to_cbit:usize) {
 
         // Construct the index of the classical bit
         let cbit_index = to_cbit + self.qubit_count;
 
         // Construct projection tensors for zero and one values.
-        let c_1 = Complex32::new(1.0, 0.0);
-        let c_0 = Complex32::new(0.0, 0.0);
+        let c_1 = Complex32::one();
+        let c_0 = Complex32::zero();
         let zero_projector = array![
             [c_1,c_0],
             [c_0,c_0],
@@ -209,51 +236,58 @@ impl QuantumRegister {
             [c_0,c_1],
         ];
 
-        // Construct the permutation of axes we'll need to un-permute the result of the
-        // tensor dot products below. This unpermuting will help keep the tensor indexes
-        // that represent our qubits and cbits in a consistent order so we can address them.
-        let mut axis_permutation = Vec::with_capacity(self.bit_count);
-        let mut offset = 1;
-        for axis in num::range(0,self.bit_count){
-            axis_permutation.push(
-                if axis == from_qubit { offset -= 1; 0}
-                else {axis + offset }
-            );
-        }
+        // // Construct the permutation of axes we'll need to un-permute the result of the
+        // // tensor dot products below. This unpermuting will help keep the tensor indexes
+        // // that represent our qubits and cbits in a consistent order so we can address them.
+        // let mut axis_permutation = Vec::with_capacity(self.bit_count());
+        // let mut offset = 1;
+        // for axis in num::range(0,self.bit_count()){
+        //     axis_permutation.push(
+        //         if axis == from_qubit { offset -= 1; 0}
+        //         else {axis + offset }
+        //     );
+        // }
+
+        let initial_cbit_value:usize = match self.cbit_values[to_cbit] {
+            Some(true) => {1},
+            Some(false) => {0},
+            None => {
+                // Make a new hidden bit and swap it into the spot where the cbit is
+                self.hide_bit(cbit_index);
+                0
+            },
+        };
 
         // Compute the new amplitudes by doing a tensor contraction that projects the state
         // into the world where the qubit is measured to be zero
-        let amplitude_result_zero=
+        let mut amplitude_result_zero=
         tensordot(
             &zero_projector, 
             &self.amplitudes, 
             &[Axis(1)],
-            &[Axis(from_qubit)])
-        .permuted_axes(IxDyn(axis_permutation.as_slice()))
-        // Then sum over the possible values of the cbit before we overwrite it
-        .sum_axis(Axis(cbit_index));
+            &[Axis(from_qubit)]);
 
+        amplitude_result_zero.swap_axes(from_qubit, 0); 
+ 
         // Compute the new amplitudes by doing a tensor contraction that projects the state
         // into the world where the qubit is measured to be one.
-        let amplitude_result_one =
+        let mut amplitude_result_one =
         tensordot(
             &one_projector, 
             &self.amplitudes, 
             &[Axis(1)],
-            &[Axis(from_qubit)]) 
-        .permuted_axes(IxDyn(axis_permutation.as_slice()))
-        // Then sum over the possible values of the cbit before we overwrite it.
-        .sum_axis(Axis(cbit_index));
+            &[Axis(from_qubit)]);
+        
+        amplitude_result_one.swap_axes(from_qubit, 0); 
+    
 
         // Some Debug information .
         // println!("Amplitudes when the qubit is measured as zero");
         // println!("{}",Self::to_string_internal(& amplitude_result_zero.view()));
         // println!("{:?}",amplitude_result_zero);
-        // println!("{:.3}", norm_sqr(&amplitude_result_zero));
         // println!("Amplitudes when the qubit is measured as one");
         // println!("{}",Self::to_string_internal(& amplitude_result_one.view()));
         // println!("{:?}",amplitude_result_one);
-        // println!("{:.3}", norm_sqr(&amplitude_result_one));
 
 
         // Set the amplitude tensor to the projections we got. This effectively 
@@ -261,15 +295,175 @@ impl QuantumRegister {
         // 2) Collapses the state of the qubit to the basis state it was measured in
         //
         // When the cbit is zero, assign the amplitudes from the zero projection.
-        self.amplitudes.index_axis_mut(Axis(cbit_index),0).assign(&amplitude_result_zero);
+        self.amplitudes.index_axis_mut(Axis(cbit_index),0).assign(&amplitude_result_zero.index_axis_mut(Axis(cbit_index), initial_cbit_value));
         // When the cbit is one, assign the amplitudes from the one projection.
-        self.amplitudes.index_axis_mut(Axis(cbit_index),1).assign(&amplitude_result_one);
+        self.amplitudes.index_axis_mut(Axis(cbit_index),1).assign(&amplitude_result_one.index_axis_mut(Axis(cbit_index), initial_cbit_value));
+
+
+        // Set hints for the next measurement
+        self.cbit_values[to_cbit] = 
+            if abs_diff_eq!(self.bit_probability(cbit_index, false), 0.0, epsilon = 0.00001) { Some(true) }
+            else if abs_diff_eq!(self.bit_probability(cbit_index, true), 0.0, epsilon = 0.00001) { Some(false) } 
+            else { None };
 
 
         println!("{}", self.to_string());
     }
 
-    
+
+
+    // Adds a hidden bit at the end of amplitudes
+    // This is used when state is "destroyed" in order to continue 
+    // to be able to trace across all possibilities.
+    fn hide_bit(&mut self, bit_index: usize) {
+
+        println!("Hiding bit {}", bit_index);
+        println!("total bits {}", self.bit_count());
+
+        let hidden_bit_index = self.bit_count();
+
+        // Create the new index we will need
+        self.amplitudes.insert_axis_inplace(Axis(hidden_bit_index));
+
+
+        // // Modify the dimensions of the new axis to accomodate 0 and 1 states
+        let mut dimension = self.amplitudes.dim();
+        let mut dimension_spec = dimension.as_array_view_mut();
+        dimension_spec[hidden_bit_index] = 2;
+
+        // Take ownership of amplitudes, because we're going to end up replacing it
+        let amplitudes = self.amplitudes.to_owned();
+
+        // Make a copy of our amplitudes by broadcasting the existing one to the larger shape that includes the hidden bit
+        let mut new_amplitudes = amplitudes.broadcast(dimension_spec.to_vec()).unwrap().to_owned();
+
+        // Reset the |1> state of the new hidden bit to zero
+        let zeros = ArrayD::zeros(vec![2; hidden_bit_index - 1]);
+        new_amplitudes.index_axis_mut(Axis(hidden_bit_index),1).assign(&zeros);
+        
+        // Swap our newly-zeroed hidden bit into place
+        new_amplitudes.swap_axes(hidden_bit_index, bit_index);
+
+        
+        self.amplitudes = Box::new(new_amplitudes);
+        self.hidden_qubit_count += 1;
+    }
+
+
+
+    // Despite the language spec talking about tracing over qubits, There isn't a way to implement 
+    // reset as a projection in the formalism I've chosen. There is an implied measurement here, which means
+    // I need to keep amplitudes around and defer that until the end such that probabilities for every possible
+    // situation are fundamentally derivable from the amplitudes
+    //
+    // In the amplitude formalism the correct way to handle a reset is to introduce a new qubit in 
+    // the |0> state and swap it into the position of the target qubit. Any other qubits
+    // that are entangled with the target qubit will stay entangled with the now hidden qubit
+    // and the squared norm logic in the probability() function will function correctly.
+    //
+    // This has the nice side effect that there's only one place in the whole program where we
+    // actually take a trace, and that trace has the same meaning no matter how weird the circuit gets
+    fn reset(&mut self, target_qubit:usize) {
+
+        self.hide_bit(target_qubit);
+
+
+        println!("{}", self.to_string());
+        println!("{:?}", self.amplitudes);
+    }
+
+
+    // How to do conditionals
+    // Collapse the relevant axes to the "only" values that make sense. i.e. those that satisfy the conditional
+    // amplitudes still needs to have the same number of indicies so that indexing into it from all the other
+    // handlers still works
+
+    // We need to save off a handle to the original amplitudes somehow, so this can be undone
+    fn start_conditional (&mut self, creg: usize, size: usize, value: u64) {
+
+        // Save off the original amplitudes
+        let amplitudes = self.amplitudes.to_owned();
+
+        // Make a full copy for use during the condition
+        let tensor_shape = vec![2; self.bit_count()];
+        self.amplitudes = Box::new(ArrayD::<Complex32>::zeros(tensor_shape));
+        self.amplitudes.assign(&amplitudes);
+
+        // Make a list of which indicies are pinned and to what values
+        let cbit_index = self.qubit_count + creg;
+        let mut pinned_values:Vec<Option<bool>> = vec![None; cbit_index];
+        for bit_index in 0..size {
+            match (value >> bit_index) & 1 {
+                0 => pinned_values.push(Some(false)),
+                1 => pinned_values.push(Some(true)),
+                _ => panic!("bitwise and of a number with 1 didn't give 1 or zero."),
+            }
+        }
+
+        // Contract amplitudes along those values so gates can only access the elements
+        // where the condition is true. Leave the axes we're pinning as length-1 so 
+        // counting tensor axes still works.
+        for (index, pinned_value) in pinned_values.iter().enumerate() {
+            match pinned_value {
+                Some(true) => {self.amplitudes.collapse_axis(Axis(index), 1);},
+                Some(false) => {self.amplitudes.collapse_axis(Axis(index), 0);},
+                None => (),
+            }
+        }
+
+        // Save our settings in the object for when the condition is turned off
+        self.amplitudes_save = Some(amplitudes);
+        self.pinned_values = Some(pinned_values);
+
+        println!("{:?}", self.amplitudes);
+    }
+
+
+    // Undo the amplitudes and put things back where they were
+    pub fn end_conditional (&mut self) {
+        // Recover the values we need to undo the condition.
+        // Take ownership of the old amplitudes so we can put them in the right place.
+        let pinned_values = match self.pinned_values.as_mut() {
+            Some(pinned_values) => pinned_values,
+            None => panic!("No pinned values, probably means a condition was ended without starting one."),
+        };
+        let mut amplitudes_saved = match self.amplitudes_save.as_mut() {
+            Some(amplitudes_save) => amplitudes_save,
+            None => panic!("No saved amplitudes, probably means a condition was ended without starting one."),
+        }.to_owned();
+
+        // Create a view of the saved amplitudes that has axes removed to the same slice the condition used.
+        // At the same time remove the 1-length axes we left in self.amplitudes so that the two are the same shape.
+        let mut amplitudes_saved_view = amplitudes_saved.view_mut();
+        let mut amplitudes = *self.amplitudes.to_owned();
+
+        for (index, pinned_value) in pinned_values.iter().enumerate() {
+            match pinned_value {
+                // take amplitudes (which was subject to conditional gates) and 
+                // remove all its zero-length axes
+                Some(true) => {
+                    amplitudes.index_axis_inplace(Axis(index),0);
+                    amplitudes_saved_view.index_axis_inplace(Axis(index), 1);
+                },
+                Some(false) => {
+                    amplitudes.index_axis_inplace(Axis(index), 0);
+                    amplitudes_saved_view.index_axis_inplace(Axis(index), 0);
+                },
+                // For none we leave the index alone and deal with the next index.
+                None => (),
+            }
+        }
+
+        // Now that the view on the saved amplitudes and self.amplitudes (which was altered during the condition) 
+        // are the same shape. Assign the amplitudes to the slice of saved amplitudes, so that amplitudes_saved has 
+        // the full set after the condition
+        amplitudes_saved_view.assign(&amplitudes);
+
+        // Put our saved amplitudes back now and return the object to normal mode
+        self.amplitudes = amplitudes_saved;
+        self.amplitudes_save = None;
+        self.pinned_values = None;
+    }
    
     // what's the interface for conditional probaility requests?
     //
@@ -286,7 +480,6 @@ impl QuantumRegister {
     //   Slice amplitudes such that condition and question Some() parts are satisfied, norm across all others => Store as numerator
     //     This is a probability that the configuration exists given the circuit executes
     //
-    
 
     // This is the core operation for converting amplitudes to probabilities 
     // it pins a bunch of c/qubit values, this part does not distinguish
@@ -297,21 +490,28 @@ impl QuantumRegister {
     pub fn probability(& self, pinned_values: Vec<Option<bool>>) -> f32 {
         // Slice amplitudes down to only the relevant values
         let mut view = self.amplitudes.view();
-        let mut offset:usize = 0;
-        for pinned_value in pinned_values {
+
+        for (index, pinned_value) in pinned_values.iter().enumerate() {
             match pinned_value {
                 // For true/false change our slice to be along that index being the desired value
-                Some(true) => {view.collapse_axis(Axis(offset), 1);},
-                Some(false) => {view.collapse_axis(Axis(offset), 0);},
+                Some(true) => {view.collapse_axis(Axis(index), 1);},
+                Some(false) => {view.collapse_axis(Axis(index), 0);},
                 // For none we leave the index alone and deal with the next index
-                None => {offset += 1;},
+                None => (),
             }
-            println!("{:?}", view);
+            //println!("{:?}", view);
         }
 
         // Now view is an indexed object that lacks all the indicies that were pinned by caller
         // So we take the squared norm and return it.
         Self::norm_sqr(&view)
+    }
+
+    // Hand back the global probability that a bit is set to the given value
+    pub fn bit_probability(& self, bit_index: usize, value: bool) -> f32 {
+        let mut pinned_values = vec![None; self.bit_count()];
+        pinned_values[bit_index] = Some(value);
+        self.probability(pinned_values)
     }
 
     fn norm_sqr<T: Num + Clone> (amplitudes:&ArrayViewD<Complex<T>>) -> T {
@@ -366,8 +566,6 @@ impl QuantumRegister {
 
 
 
-
-
 #[derive(Debug)]
 pub struct QuantumRegisterGateWriter<'a> {
     data: &'a mut QuantumRegister
@@ -419,16 +617,19 @@ impl GateWriter for QuantumRegisterGateWriter <'_> {
 
     fn write_reset(&mut self, reg: usize) -> Result<(), Self::Error> {
         println!("reset {reg}");
+        self.data.reset(reg);
         Ok(())
     }
 
     fn start_conditional(&mut self, reg: usize, count: usize, value: u64) -> Result<(), Self::Error> {
         println!("if ({reg}:{count} == {value}) {{");
+        self.data.start_conditional(reg, count, value);
         Ok(())
     }
 
     fn end_conditional(&mut self) -> Result<(), Self::Error> {
         println!("}}");
+        self.data.end_conditional();
         Ok(())
     }
 }

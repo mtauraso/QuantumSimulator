@@ -16,18 +16,9 @@ impl GateWriter for CheckGateWriter {
     fn write_u(&mut self, _: Value, _: Value, _: Value, _: usize) -> Result<(), Self::Error> { Ok(()) }
     fn write_barrier(&mut self, _: &[usize]) -> Result<(), Self::Error> { Ok(()) }
     fn write_measure(&mut self, _: usize, _: usize) -> Result<(), Self::Error> { Ok(()) }
-
-    fn write_reset(&mut self, _: usize) -> Result<(), Self::Error> {
-        Err(Self::Error::new("TODO: Reset function not implemented"))
-    }
-    
-    fn start_conditional(&mut self, _: usize, _: usize, _: u64) -> Result<(), Self::Error> {
-        Err(Self::Error::new("TODO: Conditionals not implemented"))
-    }
-
-    fn end_conditional(&mut self) -> Result<(), Self::Error> {
-        Err(Self::Error::new("TODO: Conditionals not implemented"))
-    }
+    fn write_reset(&mut self, _: usize) -> Result<(), Self::Error> { Ok(()) }
+    fn start_conditional(&mut self, _: usize, _: usize, _: u64) -> Result<(), Self::Error> { Ok(()) }
+    fn end_conditional(&mut self) -> Result<(), Self::Error> { Ok(()) }
 
     fn write_opaque(&mut self, _: &Symbol, _: &[Value], _: &[usize]) -> Result<(), Self::Error> {
         Err(Self::Error::new("Opaque gates Not Implemented"))
