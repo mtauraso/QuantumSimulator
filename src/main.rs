@@ -157,6 +157,14 @@ mod tests {
         let program = openqasm_parse_source(source.to_string(), Some(Path::new("./")));
         let register = openqasm_run_program(program);
         
+        println!("{:?}",register.amplitudes());
+
+        let amps = register.amplitudes().to_owned().into_dimensionality::<Ix1>().unwrap();
+
+        // amplitudes we would expect from a hadamard on |0>
+        assert_abs_diff_eq!(amps[[1]].re, 0.707, epsilon = 0.001);
+        assert_abs_diff_eq!(amps[[0]].re, 0.707, epsilon = 0.001);
+
         // Each state of the qubit should have equal probability
         assert_relative_eq!(register.probability(vec![Some(true)]), 0.5);
         assert_relative_eq!(register.probability(vec![Some(false)]), 0.5);
@@ -248,13 +256,13 @@ mod tests {
 
         // bit patterns 110 and 011 should have negative imaginary amplitudes of 0.5
         // These are the situations where q[1] was measured to be 1 so c[0] is also 1
-        assert_abs_diff_eq!(amps[[1,1,0,1]].im, -0.5, epsilon = 0.0001);
-        assert_abs_diff_eq!(amps[[0,1,1,1]].im, -0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[1,1,0,1]].re, -0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[0,1,1,1]].re, -0.5, epsilon = 0.0001);
 
         // bit patterns 000 and 101 should have positive imaginary amplitudes of 0.5
         // These are the situations where q[2] was 0 before reset
-        assert_abs_diff_eq!(amps[[1,0,1,0]].im, 0.5, epsilon = 0.0001);
-        assert_abs_diff_eq!(amps[[0,0,0,0]].im, 0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[1,0,1,0]].re, 0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[0,0,0,0]].re, 0.5, epsilon = 0.0001);
 
         //Each bit pattern 1101, 0111, 1010, 0000 in all the bits should have 25% prob
         assert_abs_diff_eq!(register.probability(vec![Some(true), Some(true), Some(false), Some(true)]), 0.25, epsilon = 0.0001);
@@ -372,13 +380,13 @@ mod tests {
 
         // bit patterns 010 and 110 should have negative imaginary amplitudes of 0.5
         // These are the situations where q[2] was 1 before reset
-        assert_abs_diff_eq!(amps[[0,1,0,1]].im, -0.5, epsilon = 0.0001);
-        assert_abs_diff_eq!(amps[[1,1,0,1]].im, -0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[0,1,0,1]].re, -0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[1,1,0,1]].re, -0.5, epsilon = 0.0001);
 
         // bit patterns 000 and 100 should have positive imaginary amplitudes of 0.5
         // These are the situations where q[2] was 0 before reset
-        assert_abs_diff_eq!(amps[[1,0,0,0]].im, 0.5, epsilon = 0.0001);
-        assert_abs_diff_eq!(amps[[0,0,0,0]].im, 0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[1,0,0,0]].re, 0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[0,0,0,0]].re, 0.5, epsilon = 0.0001);
 
         //Each bit pattern 010, 110, 100, 000 in the qubits should have 25% prob
         assert_abs_diff_eq!(register.probability(vec![Some(false), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
@@ -415,10 +423,10 @@ mod tests {
 
         // These are the amplitudes we should have
         let amps = register.amplitudes().to_owned().into_dimensionality::<Ix4>().unwrap();
-        assert_abs_diff_eq!(amps[[0,0,0,0]].im,  0.5, epsilon = 0.0001);
-        assert_abs_diff_eq!(amps[[0,1,0,1]].re, -0.5, epsilon = 0.0001);
-        assert_abs_diff_eq!(amps[[1,0,1,0]].im, -0.5, epsilon = 0.0001);
-        assert_abs_diff_eq!(amps[[1,1,1,1]].re, -0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[0,0,0,0]].re,  0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[0,1,0,1]].re,  0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[1,0,1,0]].re, -0.5, epsilon = 0.0001);
+        assert_abs_diff_eq!(amps[[1,1,1,1]].re,  0.5, epsilon = 0.0001);
 
         // each two bit pattern should have 25% probability
         assert_abs_diff_eq!(register.probability(vec![Some(false), Some(true)]), 0.25, epsilon = 0.0001);

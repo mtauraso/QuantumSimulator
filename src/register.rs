@@ -4,7 +4,7 @@ use num::{
     complex::Complex,
     Zero, One,
     Rational64,
-    traits::{CheckedAdd, CheckedSub,CheckedDiv}, Num
+    traits::{CheckedAdd,CheckedDiv}, Num
 };
 use openqasm as oq;
 use oq::{
@@ -60,13 +60,12 @@ impl QuantumRegister {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn amplitudes(&self) -> ArrayViewD<Complex32> { self.amplitudes.view() }
+    #[cfg(test)]
+    pub fn visible_bit_count(&self) -> usize{ self.qubit_count + self.cbit_count }
 
     pub fn bit_count(&self) -> usize { self.qubit_count + self.cbit_count + self.hidden_qubit_count }
-
-    #[allow(dead_code)]
-    pub fn visible_bit_count(&self) -> usize{ self.qubit_count + self.cbit_count }
 
     // Called from gatewriter when the number of bits is available
     fn initialize(&mut self, qubit_names: Vec<Symbol>, cbit_names: Vec<Symbol>) {
@@ -86,7 +85,7 @@ impl QuantumRegister {
 
         self.cbit_values = vec![Some(false); self.cbit_count];
 
-        println!("{}", self.to_string());
+        //println!("{}", self.to_string());
     }
 
     // Apply a cx gate to the numbered qubits
@@ -150,30 +149,27 @@ impl QuantumRegister {
         // TODO TRACE: this is where we would need to keep history
         self.amplitudes = Box::new(amplitude_result);
 
-        println!("{}", self.to_string());
+        //println!("{}", self.to_string());
 
     }
 
-    // TODO: Implement gates
     // Apply a U gate with given parameters to the given qubit
     fn apply_u(&mut self, theta:Value, phi:Value, lambda:Value, target_qubit: usize) {
         // Todo: These can probably be computed at program parse time and then used during execution
-        // U matrix from OpenQASM spec: "Open Quantum Assembly Language" Cross, Bishop, Smolin Gambetta (2017)
-        let philambdaplus = 
-            checked_div(
-                checked_add(phi, lambda).unwrap(),
-                Rational64::from(2)).unwrap().into_float();
-        let philambdaminus = 
-            checked_div(
-                checked_sub(phi, lambda).unwrap(),
-                Rational64::from(2)).unwrap().into_float();
+        //
+        // U matrix from OpenQasm 3.0 standard at https://openqasm.com/language/gates.html#built-in-gates
+        // I am not using the matrix from the OpenQASM 2.0 spec because it is annoyingly different
+        // from the standard set of matricies, especially for 
+        // hadamard which is no longer [[1,1][1,-1]] in strict OpenQASM 2.0.
+        let philambdaplus = checked_add(phi, lambda).unwrap().into_float();
+
         let halftheta = checked_div(theta,Rational64::from(2)).unwrap();
         let sinhalftheta = halftheta.checked_sin().unwrap().into_float();
         let coshalftheta = halftheta.checked_cos().unwrap().into_float();
 
-        let term00 = Complex32::from_polar(coshalftheta, -philambdaplus);
-        let term01 = Complex32::from_polar(-sinhalftheta, -philambdaminus);
-        let term10 = Complex32::from_polar(sinhalftheta, philambdaminus);
+        let term00 = Complex32::from_polar(coshalftheta, 0.0);
+        let term01 = Complex32::from_polar(-sinhalftheta, lambda.into_float());
+        let term10 = Complex32::from_polar(sinhalftheta, phi.into_float());
         let term11 = Complex32::from_polar(coshalftheta, philambdaplus);
 
         let u_matrix = array![
@@ -201,9 +197,10 @@ impl QuantumRegister {
             &[Axis(target_qubit)])
         .permuted_axes(IxDyn(axis_permutation.as_slice()));
 
+        
         self.amplitudes = Box::new(amplitude_result);
 
-        println!("{}", self.to_string());
+        //println!("{}", self.to_string());
 
     }
 
@@ -307,7 +304,7 @@ impl QuantumRegister {
             else { None };
 
 
-        println!("{}", self.to_string());
+        //println!("{}", self.to_string());
     }
 
 
@@ -317,8 +314,8 @@ impl QuantumRegister {
     // to be able to trace across all possibilities.
     fn hide_bit(&mut self, bit_index: usize) {
 
-        println!("Hiding bit {}", bit_index);
-        println!("total bits {}", self.bit_count());
+        //println!("Hiding bit {}", bit_index);
+        //println!("total bits {}", self.bit_count());
 
         let hidden_bit_index = self.bit_count();
 
@@ -362,14 +359,14 @@ impl QuantumRegister {
     // and the squared norm logic in the probability() function will function correctly.
     //
     // This has the nice side effect that there's only one place in the whole program where we
-    // actually take a trace, and that trace has the same meaning no matter how weird the circuit gets
+    // actually take a trace, and that trace has the same meaning no matter how weird/crazy the 
+    // circuit gets
     fn reset(&mut self, target_qubit:usize) {
 
         self.hide_bit(target_qubit);
 
-
-        println!("{}", self.to_string());
-        println!("{:?}", self.amplitudes);
+        //println!("{}", self.to_string());
+        //println!("{:?}", self.amplitudes);
     }
 
 
@@ -415,7 +412,7 @@ impl QuantumRegister {
         self.amplitudes_save = Some(amplitudes);
         self.pinned_values = Some(pinned_values);
 
-        println!("{:?}", self.amplitudes);
+        //println!("{:?}", self.amplitudes);
     }
 
 
@@ -465,26 +462,13 @@ impl QuantumRegister {
         self.pinned_values = None;
     }
    
-    // what's the interface for conditional probaility requests?
-    //
-    // User tells us what bit values are (across q and c bits?). Each bit is pinned to 0,1 or is unpinned, 
-    // and then you can ask about any bits you didn't pin, but the ask has to have a value for each of those bits
-    // 
-    // How to encode this?
-    // For the condition: Option on each bit Some(0), Some(1), or None
-    // For the ask: Option on each bit Some(0), Some(1), or None
-    // 
-    // Algorithm:
-    //   Slice amplitudes such that condition Some() parts are satisfied, norm sq across all others => Store as the denominator
-    //     This is a probability, that the condition is satisfied given the circut executes
-    //   Slice amplitudes such that condition and question Some() parts are satisfied, norm across all others => Store as numerator
-    //     This is a probability that the configuration exists given the circuit executes
-    //
 
     // This is the core operation for converting amplitudes to probabilities 
-    // it pins a bunch of c/qubit values, this part does not distinguish
-    // but caller must pass them in the right order, and then we do the normsquared 
-    // operation across all of them.
+    // it pins a bunch of c/qubit values, this part does not distinguish between c/q or hidden bits
+    //
+    // Caller must pass in the right order and no more than the total number of bits
+    // function does a normsquared operation across all of them.
+    //
     // Normalization is such that no values are pinned by caller, it should
     // always return 1
     pub fn probability(& self, pinned_values: Vec<Option<bool>>) -> f32 {
@@ -507,12 +491,13 @@ impl QuantumRegister {
         Self::norm_sqr(&view)
     }
 
-    // Hand back the global probability that a bit is set to the given value
+    // Hand back the global probability that a single bit is set to the given value
     pub fn bit_probability(& self, bit_index: usize, value: bool) -> f32 {
         let mut pinned_values = vec![None; self.bit_count()];
         pinned_values[bit_index] = Some(value);
         self.probability(pinned_values)
     }
+
 
     fn norm_sqr<T: Num + Clone> (amplitudes:&ArrayViewD<Complex<T>>) -> T {
         amplitudes.fold(T::zero(), |accum:T, elem:&Complex<T>| -> T{
@@ -641,13 +626,6 @@ fn checked_add(lhs: Value, rhs: Value) -> Option<Value> {
     Some(Value {
         a: lhs.a.checked_add(&rhs.a)?,
         b: lhs.b.checked_add(&rhs.b)?,
-    })
-}
-
-fn checked_sub(lhs: Value, rhs: Value) -> Option<Value> {
-    Some(Value {
-        a: lhs.a.checked_sub(&rhs.a)?,
-        b: lhs.b.checked_sub(&rhs.b)?,
     })
 }
 
