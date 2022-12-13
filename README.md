@@ -1,42 +1,29 @@
-# README
+Quantum Simulator is a simple command line application which can execute a program written in OpenQASM 2.0 and output the probabilities associated with measurements made as part of the program. The underlying quantum simulation is state vector based and does not incorporate sources of error arising from a physical system; however it does support all operations defined in the [OpenQASM 2.0 spec](https://arxiv.org/pdf/1707.03429.pdf)
 
-Goal here:  Write a program which takes a circuit specification in an existing quantum circuit language and runs it on a classical computer. Potential extension: Model noise within the simulation, possibly with some physical model of the noise. Several programs like this exist in the world with fairly large feature sets; however, for this idea I'd want to code my own from a blank slate. 
-
-Deliverables would be program, source code, readme & getting started level documentation, screen-capture demo videos, and runnable sample circuits that the simulator can execute put up on a website. 
-
-Decisions:
-- Rust is the base language
-- Not using QASM-rust because it doesn't support parsing all of QASM 2.0. Openqasm's AST is much nicer, and supports the expression language implicit in QASM
-- Nalgebra for linal (and num/ndarray i think as deps?)
-- Input will be OpenQASM 2.0 https://github.com/openqasm/openqasm/tree/OpenQASM2.x (and the paper in my zotero)
-- Readme level docs and "how to run" will be on github repo, will directly link PDF
-- Final paper with citations will be in this repo as a tex file. pdf will include hyperlink support
+Detail on the implementation choices and mathematical formalism can be found in [the paper in this repository](https://raw.githubusercontent.com/mtauraso/QuantumSimulator/v0.1.0/LaTeX/QuantumSimulator.pdf)
 
 
-Program flow:
-- Read in the qasm file
-- Execute it: There may need to be some different execution modes 
-- You see command-line output (Output format may be flaggable)
+# Getting Started
 
-Open questions:
-- Final docs: (Ideas: github.io style website, sequence of .md files in repo, A pdf/tex paper) md files and pdf/tex paper seem both easiest and most legible to academia
-- Specifying initial input states
-- How do you get the output? (Should be some form of amplitudes? or probability of measurements? or bloch spheres?)
-- What is the noise model? 
-- Do we allow specification of symbolic input states?
-- Do I want particular pretty output?
+## Installation
+### Windows
+The fastest way to get started is to download `quantum_simulator.exe` as well as the files in the `sample` directory. For most programs you will need the program file and also the file `qelib1.inc` for gate definitions. You can then open windows terminal, navigate to your download location and run `quantum_simulator.exe --help` You should see a help message.
 
-Out of scope:
-- Input circuit GUI
+### Other systems (OSX, Linux)
+`git clone` the source tree and run `cargo build`. This should generate an executable which you can run directly from `/target/debug/quantum_simulator` or you can use `cargo run`. If you are using `cargo run` and want to pass command line arguments you can use `cargo run --` followed by the command line arguments for `quantum_simulator` e.g. `cargo run -- --help` will print the help messages
 
-TODO:
-- Use the visitor logic to create registers
-- Data model the state vector of all quantum registers
-- Use the visitor logic to evolve quantum registers for basic test program
-- Look through spec and implement all (implementable) primitives
+## Running programs
+From your terminal type `quantum_simulator.exe <filename>` to run a qasm file. You should get output showing the probabilities associated with any measurements done in the program. The image below shows how this looks
 
-- Read the QASM spec, and consider user interface
-	- An idea: Circuit is displayed graphically, with ability to expand/contract the gates. Circuit input is the openqasm file, graphic output is only a viewer of circuit and results 
+![Gif showing quantum_simulator being run on a simple test program](https://raw.githubusercontent.com/mtauraso/QuantumSimulator/main/images/simple.gif)
 
-- Write down the most cut down basic user interface that would work
-- Write down 3-5 immediate extensions on that basic form. Ideally no more than 1 level of "A builds on B" type dependencies. Once basic is done, 3 ideas should be actionable
+You can also run quantum simulator with the `--trace` option, which will enumerate the steps in the circuit, printing out the amplitudes after each step. Here's another video showing the process:
+
+![Gif showing quantum_simulator being run on a simple test program in trace mode](https://raw.githubusercontent.com/mtauraso/QuantumSimulator/main/images/trace.gif)
+
+
+# Sample circuits
+Sample circuits are in the `sample` directory. A few basic circuits are there for ease of use, many of them are originally from the OpenQASM spec with only slight modifications.
+
+
+Note:Deliverables would be program, source code, readme & getting started level documentation, screen-capture demo videos, and runnable sample circuits that the simulator can execute put up on a website. 
