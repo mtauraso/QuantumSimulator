@@ -13,6 +13,10 @@ use oq::{
 use nd::prelude::*;
 use ndarray_einsum_beta::*;
 use approx::*;
+use std::collections::HashMap;
+
+use crate::cli::Cli;
+use clap::Parser;
 
 
 // This is actually all the registers
@@ -39,6 +43,16 @@ pub struct QuantumRegister {
     qubit_names: Vec<Symbol>,
     cbit_names: Vec<Symbol>,
 
+    // Command line options that affect output
+    trace: bool,
+    debug: bool,
+
+    //Start index and extent for each cregister/qregister
+    // Start indicies are relative to the start of q/c registers
+    // in the amplitude indexes
+    cregister_extents: HashMap<String, (usize, usize)>,
+    qregister_extents: HashMap<String, (usize, usize)>,
+
     // Used for conditionals
     amplitudes_save: Option<Box<ArrayD<Complex32>>>,
     pinned_values: Option<Vec<Option<bool>>>,
@@ -56,7 +70,11 @@ impl QuantumRegister {
             cbit_count: 0,
             hidden_qubit_count: 0,
             qubit_names: Vec::new(), 
-            cbit_names: Vec::new(), 
+            cbit_names: Vec::new(),
+            trace: false,
+            debug: false,
+            cregister_extents: HashMap::new(),
+            qregister_extents: HashMap::new(),
         }
     }
 
@@ -67,13 +85,89 @@ impl QuantumRegister {
 
     pub fn bit_count(&self) -> usize { self.qubit_count + self.cbit_count + self.hidden_qubit_count }
 
+
+    pub fn print_probabilities(&self) {
+        // Ignores hidden qubits, simply tracing over them
+        // Prints out a summary at point-in-time by classical register for all possible bit patterns
+
+        let max_cbit_value:usize = 1 << self.cbit_count;
+
+        for cbit_value in 0..max_cbit_value {
+            let pinned_bit_pattern = self.cbit_pattern_to_pinned_bits(cbit_value, 0, self.cbit_count);
+            let probability = self.probability(&pinned_bit_pattern);
+
+            if abs_diff_eq!(probability,  0.0, epsilon = 0.0001) {
+                continue;
+            } else {
+                let register_string = self.bit_pattern_as_register_names(&pinned_bit_pattern);
+                println!("Probability for {}: {:.4}", register_string, probability);
+            }
+        }
+    }
+
+    fn cbit_pattern_to_pinned_bits(&self, creg_value:usize, creg_offset:usize, creg_size:usize) -> Vec<Option<bool>> {
+         // Make a list of which indicies are pinned and to what values
+         let cbit_index = self.qubit_count + creg_offset;
+         let mut pinned_values:Vec<Option<bool>> = vec![None; cbit_index];
+         for bit_index in 0..creg_size {
+             match (creg_value >> bit_index) & 1 {
+                 0 => pinned_values.push(Some(false)),
+                 1 => pinned_values.push(Some(true)),
+                 _ => panic!("bitwise and of a number with 1 didn't give 1 or zero."),
+             }
+         }
+         pinned_values
+    }
+
+    // Given a bit pattern (vec of option bools) for values of the cbits
+    // Look at the register and and me back a string describing all the classical registers
+    // form should be reg = <binary val>, reg = <binary val>
+    pub fn bit_pattern_as_register_names (&self, pinned_bits: &Vec<Option<bool>>) -> String {
+
+        let qreg_string = Self::register_printable_helper(pinned_bits, 0, &self.qregister_extents);
+        let creg_string = Self::register_printable_helper(pinned_bits, self.qubit_count, &self.cregister_extents);
+
+        qreg_string + creg_string.as_str()
+    }
+
+    fn register_printable_helper(pinned_bits: &Vec<Option<bool>>, reg_extents_start:usize, register_extents: &HashMap<String, (usize, usize)> ) -> String {
+        let mut returnme = String::new();
+
+        for (key, (offset, size)) in register_extents.iter() {
+            let mut all_unset = true;
+
+            let first_index:usize = reg_extents_start + offset;
+            let last_index:usize = first_index + size;
+            let bits = pinned_bits[first_index..last_index].to_vec();
+
+            // Note we iterate in reverse order here, so the most significant bit with the largest index
+            // is printed out first.
+            let bit_pattern: Vec<&str> = bits.iter().rev().map(|bit_option| {
+                match bit_option {
+                    Some(true) => {all_unset = false; "1"},
+                    Some(false) => {all_unset = false; "0"},
+                    None => "_",
+                }
+            }).collect();
+
+            if all_unset == false {
+                returnme += format!("{}={}", key.as_str(), bit_pattern.join("").as_str()).as_str();
+            }
+        }
+        returnme
+    }
+
     // Called from gatewriter when the number of bits is available
     fn initialize(&mut self, qubit_names: Vec<Symbol>, cbit_names: Vec<Symbol>) {
+
+        let cli = Cli::parse();
+
+        self.trace = cli.trace;
+        self.debug = cli.debug;
+
         self.qubit_count = qubit_names.len();
         self.cbit_count = cbit_names.len();
         self.hidden_qubit_count = 0;
-        self.qubit_names = qubit_names;
-        self.cbit_names = cbit_names;
 
         let tensor_shape = vec![2; self.bit_count()];
         self.amplitudes = Box::new(ArrayD::zeros(tensor_shape));
@@ -85,7 +179,46 @@ impl QuantumRegister {
 
         self.cbit_values = vec![Some(false); self.cbit_count];
 
-        //println!("{}", self.to_string());
+
+        // Set up cregister extents, and save the bit names passed in by caller
+        Self::populate_register_hash(&cbit_names, &mut self.cregister_extents);
+        Self::populate_register_hash(&qubit_names, &mut self.qregister_extents);
+        self.qubit_names = qubit_names;
+        self.cbit_names = cbit_names;
+
+        if self.trace { println!("{}", self.to_string()) };
+    }
+
+
+    fn populate_register_hash ( bit_names: & Vec<Symbol>, register_extents: & mut HashMap<String, (usize, usize)>) {
+
+        let mut register_name = String::new();
+        let mut start_index:usize = 0;
+        for (cbit_index, cbit_symbol) in bit_names.iter().enumerate() {
+            let cbit_name = cbit_symbol.to_string();
+            let register_parse: Vec<&str> = cbit_name.split(&['[',']'][..]).collect();
+
+            let current_bit:usize = register_parse[1].to_string().parse::<usize>().unwrap();
+
+            if cbit_index == 0 {
+                start_index = cbit_index;
+                register_name = register_parse[0].to_string();
+                continue;
+            }
+
+            match current_bit {
+                 0 => {
+                    // Insert the last register we saw, because this is the beginning of a new one
+                    register_extents.insert(register_name, (start_index, cbit_index - start_index));
+
+                    // Since this is a new register, save our start index and the new name
+                    start_index = cbit_index;
+                    register_name = register_parse[0].to_string();
+                 },
+                 _ => {}
+            }
+        }
+        register_extents.insert(register_name, (start_index, bit_names.len() - start_index));
     }
 
     // Apply a cx gate to the numbered qubits
@@ -149,8 +282,7 @@ impl QuantumRegister {
         // TODO TRACE: this is where we would need to keep history
         self.amplitudes = Box::new(amplitude_result);
 
-        //println!("{}", self.to_string());
-
+        if self.trace { println!("{}", self.to_string()) };
     }
 
     // Apply a U gate with given parameters to the given qubit
@@ -200,8 +332,7 @@ impl QuantumRegister {
         
         self.amplitudes = Box::new(amplitude_result);
 
-        //println!("{}", self.to_string());
-
+        if self.trace { println!("{}", self.to_string()) };
     }
 
     // Handling a measurement:
@@ -304,7 +435,7 @@ impl QuantumRegister {
             else { None };
 
 
-        //println!("{}", self.to_string());
+        if self.trace { println!("{}", self.to_string()) };
     }
 
 
@@ -365,8 +496,7 @@ impl QuantumRegister {
 
         self.hide_bit(target_qubit);
 
-        //println!("{}", self.to_string());
-        //println!("{:?}", self.amplitudes);
+        if self.trace { println!("{}", self.to_string()) };
     }
 
 
@@ -412,7 +542,7 @@ impl QuantumRegister {
         self.amplitudes_save = Some(amplitudes);
         self.pinned_values = Some(pinned_values);
 
-        //println!("{:?}", self.amplitudes);
+        if self.trace { println!("{}", self.to_string()) };
     }
 
 
@@ -434,17 +564,21 @@ impl QuantumRegister {
         let mut amplitudes_saved_view = amplitudes_saved.view_mut();
         let mut amplitudes = *self.amplitudes.to_owned();
 
-        for (index, pinned_value) in pinned_values.iter().enumerate() {
+        let mut indexes_removed:usize = 0;
+        for (index_iter, pinned_value) in pinned_values.iter().enumerate() {
+            let index = index_iter - indexes_removed;
             match pinned_value {
                 // take amplitudes (which was subject to conditional gates) and 
                 // remove all its zero-length axes
                 Some(true) => {
                     amplitudes.index_axis_inplace(Axis(index),0);
                     amplitudes_saved_view.index_axis_inplace(Axis(index), 1);
+                    indexes_removed += 1;
                 },
                 Some(false) => {
                     amplitudes.index_axis_inplace(Axis(index), 0);
                     amplitudes_saved_view.index_axis_inplace(Axis(index), 0);
+                    indexes_removed += 1;
                 },
                 // For none we leave the index alone and deal with the next index.
                 None => (),
@@ -460,6 +594,8 @@ impl QuantumRegister {
         self.amplitudes = amplitudes_saved;
         self.amplitudes_save = None;
         self.pinned_values = None;
+
+        if self.trace { println!("{}", self.to_string()) };
     }
    
 
@@ -471,7 +607,7 @@ impl QuantumRegister {
     //
     // Normalization is such that no values are pinned by caller, it should
     // always return 1
-    pub fn probability(& self, pinned_values: Vec<Option<bool>>) -> f32 {
+    pub fn probability(& self, pinned_values: &Vec<Option<bool>>) -> f32 {
         // Slice amplitudes down to only the relevant values
         let mut view = self.amplitudes.view();
 
@@ -495,7 +631,7 @@ impl QuantumRegister {
     pub fn bit_probability(& self, bit_index: usize, value: bool) -> f32 {
         let mut pinned_values = vec![None; self.bit_count()];
         pinned_values[bit_index] = Some(value);
-        self.probability(pinned_values)
+        self.probability(&pinned_values)
     }
 
 
@@ -506,10 +642,11 @@ impl QuantumRegister {
     }    
 
     pub fn to_string(& self) -> String{
-        Self::to_string_internal(&(*self.amplitudes).view())
+        self.to_string_internal(&(*self.amplitudes).view())
     }
 
-    fn to_string_internal(amplitudes:& ArrayViewD<Complex32>) -> String{
+
+    fn to_string_internal(&self, amplitudes:& ArrayViewD<Complex32>) -> String{
         let mut out = String::new();
 
         for (indicies,amplitude) in amplitudes.indexed_iter() {
@@ -524,19 +661,21 @@ impl QuantumRegister {
                 // Put an accuracy level in for rounding
                 // Add a case for the whole number being zero and just printing zero
                 if amplitude.im.is_zero() {
-                    out.push_str(format!("{:.3} |", amplitude.re).as_str());
+                    out.push_str(format!("{:.3} ", amplitude.re).as_str());
                 } else if amplitude.re.is_zero() {
-                    out.push_str(format!("{:.3} i |", amplitude.im).as_str());
+                    out.push_str(format!("{:.3} i ", amplitude.im).as_str());
                 } else if amplitude.im.is_sign_negative(){
-                    out.push_str(format!("({:.3} - {:.3} i)|", amplitude.re, -amplitude.im).as_str());
+                    out.push_str(format!("({:.3} - {:.3} i)", amplitude.re, -amplitude.im).as_str());
                 } else {
-                    out.push_str(format!("({:.3} + {:.3} i)|", amplitude.re, amplitude.im).as_str());
+                    out.push_str(format!("({:.3} + {:.3} i)", amplitude.re, amplitude.im).as_str());
                 }
 
-                for bit in indicies.as_array_view() {
-                    out.push_str(format!("{:.3}", bit).as_str());
+                if self.debug {
+                    out.push_str(Self::state_to_string(&indicies.as_array_view()).as_str());
+                } else {
+                    out.push_str(self.state_to_string_as_registers(&indicies.as_array_view()).as_str());
                 }
-                out.push_str(">");
+
                 //println!("{:?} {:?}", indicies.as_array_view(), amplitude);
             }
         }
@@ -546,6 +685,40 @@ impl QuantumRegister {
         }
 
         out
+    }
+
+    fn state_to_string (indicies: &ArrayView1<usize>) -> String{
+        let mut out = String::new();
+        out.push_str("|");
+        for bit in indicies {
+            out.push_str(format!("{:.3}", bit).as_str());
+        }
+        out.push_str(">");
+        out
+    }
+
+    fn state_to_string_as_registers( &self, indicies: &ArrayView1<usize>) -> String {
+
+        // Convert our indicies to Vec<Option<bool>> all with Some() so we can use the helper
+        let pinned_bits = indicies.map( |bit| {
+            match bit { 
+                0 => Some(false), 
+                1 => Some(true), 
+                _ => panic!("Index specification had a value not one or zero.")}
+        }).to_vec();
+
+        let mut register_strings = Vec::new();
+
+        register_strings.push(Self::register_printable_helper(&pinned_bits, 0, &self.qregister_extents));
+        register_strings.push(Self::register_printable_helper(&pinned_bits, self.qubit_count, &self.cregister_extents));
+
+        if self.hidden_qubit_count != 0 {
+            let hidden_bit_extent: HashMap<String, (usize, usize)> = HashMap::from([(String::from("hidden"), (0, self.hidden_qubit_count))]);
+            register_strings.push(Self::register_printable_helper(&pinned_bits, self.cbit_count + self.qubit_count, &hidden_bit_extent));
+        }
+
+        // concatenate everything and return
+        format!("|{}>",register_strings.join(",")).to_string()
     }
 }
 
@@ -565,7 +738,8 @@ impl QuantumRegisterGateWriter <'_> {
 impl GateWriter for QuantumRegisterGateWriter <'_> {
 
     // We return results, but only an error type that can never exist
-    // This is essentially a compile time proof that errors are unreachable
+    // This is essentially a compile-time static proof that errors are unreachable 
+    // in this dispatch code
     type Error = std::convert::Infallible;
 
     fn initialize(&mut self, qubits: &[Symbol], cbits: &[Symbol]) -> Result<(), Self::Error> {
@@ -574,46 +748,47 @@ impl GateWriter for QuantumRegisterGateWriter <'_> {
     }
 
     fn write_cx(&mut self, copy: usize, xor: usize) -> Result<(), Self::Error> {
-        println!("cx control qubit {copy} target qubit {xor}");
+        if self.data.trace { println!("cx control qubit index: {copy} target qubit index: {xor}") };
         self.data.apply_cx(copy, xor);
         Ok(())
     }
 
     fn write_u(&mut self, theta: Value, phi: Value, lambda: Value, reg: usize) -> Result<(), Self::Error> {
-        println!("u({theta}, {phi}, {lambda}) on qubit {reg}");
+        if self.data.trace { println!("u({theta}, {phi}, {lambda}) on qubit index {reg}") };
         self.data.apply_u(theta, phi, lambda, reg);
         Ok(())
     }
 
     fn write_opaque(&mut self, name: &Symbol, _: &[Value], _: &[usize]) -> Result<(), Self::Error> {
-        println!("opaque gate {}", name);
+        if self.data.trace { println!("opaque gate {}", name) };
         Ok(())
     }
 
     fn write_barrier(&mut self, _: &[usize]) -> Result<(), Self::Error> {
+        if self.data.trace { println!("barrier, does nothing") }
         Ok(())
     }
 
     fn write_measure(&mut self, from: usize, to: usize) -> Result<(), Self::Error> {
-        println!("measure qubit {} -> cbit {}", from, to);
+        if self.data.trace { println!("measure qubit index: {} into cbit index: {}", from, to) };
         self.data.measure(from, to);
         Ok(())
     }
 
     fn write_reset(&mut self, reg: usize) -> Result<(), Self::Error> {
-        println!("reset {reg}");
+        if self.data.trace { println!("reset qubit index: {reg}") };
         self.data.reset(reg);
         Ok(())
     }
 
     fn start_conditional(&mut self, reg: usize, count: usize, value: u64) -> Result<(), Self::Error> {
-        println!("if ({reg}:{count} == {value}) {{");
+        if self.data.trace { println!("Begin Conditional segment cbit index {reg} through {} == {value}", reg+count)};
         self.data.start_conditional(reg, count, value);
         Ok(())
     }
 
     fn end_conditional(&mut self) -> Result<(), Self::Error> {
-        println!("}}");
+        if self.data.trace { println!("End Conditional segment") };
         self.data.end_conditional();
         Ok(())
     }

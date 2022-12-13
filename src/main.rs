@@ -4,6 +4,7 @@
 
 mod register;
 mod check;
+mod cli;
 
 use openqasm as oq;
 
@@ -11,31 +12,28 @@ use oq::{GenericError,ProgramVisitor, translate::Linearize};
 use register::{QuantumRegister, QuantumRegisterGateWriter};
 
 use check::CheckGateWriter;
+use cli::Cli;
+use clap::Parser;
 
 #[cfg(test)]
 use std::path::Path;
 
 
 fn main() {
-    let program = openqasm_parse_file("test.qasm");
+    let cli = Cli::parse();
+
+    println!("Executing program in {}", cli.file.as_str());
+    let program = openqasm_parse_file(cli.file.as_str());
+
+    if cli.trace {
+        println!("Program Trace output below:")
+    }
+
     let register = openqasm_run_program(program);
-
     
-    // Print the final state
-    println!("Final Amplitudes: {}", register.to_string());
-
-    println!("Probability second qubit is true: {:.3}",register.probability(vec![None, Some(true), None]));
-
-    println!("Should print 1 if we're still conserving probability {:.3}", register.probability(vec![None, None, None]));
-
-
-    println!("Probability second qubit is true given the first qubit is also true: {:.3}", 
-        register.probability(vec![Some(true), Some(true), None]) / 
-        register.probability(vec![Some(true), None, None])
-    );
-
-    println!("Probability all bits are zero: {:.3}", register.probability(vec![Some(false), Some(false), Some(false)]));
-
+    println!("");
+    println!("Measurement probabilities for classical registers:");
+    register.print_probabilities();
 }
 
 pub fn openqasm_check_program(parser: oq::Parser) -> Result<oq::Program,oq::Errors> {
@@ -133,13 +131,13 @@ mod tests {
         let register = openqasm_run_program(program);
 
         // Newly created cbits and qubits should all be zero
-        assert_relative_eq!(register.probability(vec![Some(false), Some(false)]), 1.0);
-        assert_relative_eq!(register.probability(vec![Some(false), Some(true)]), 0.0);
-        assert_relative_eq!(register.probability(vec![Some(true), Some(false)]), 0.0);
-        assert_relative_eq!(register.probability(vec![Some(true), Some(true)]), 0.0);
+        assert_relative_eq!(register.probability(&vec![Some(false), Some(false)]), 1.0);
+        assert_relative_eq!(register.probability(&vec![Some(false), Some(true)]), 0.0);
+        assert_relative_eq!(register.probability(&vec![Some(true), Some(false)]), 0.0);
+        assert_relative_eq!(register.probability(&vec![Some(true), Some(true)]), 0.0);
 
         // All probabilities should add to 1.0
-        assert_relative_eq!(register.probability(vec![None, None]), 1.0);
+        assert_relative_eq!(register.probability(&vec![None, None]), 1.0);
     }
 
     #[test]
@@ -166,11 +164,11 @@ mod tests {
         assert_abs_diff_eq!(amps[[0]].re, 0.707, epsilon = 0.001);
 
         // Each state of the qubit should have equal probability
-        assert_relative_eq!(register.probability(vec![Some(true)]), 0.5);
-        assert_relative_eq!(register.probability(vec![Some(false)]), 0.5);
+        assert_relative_eq!(register.probability(&vec![Some(true)]), 0.5);
+        assert_relative_eq!(register.probability(&vec![Some(false)]), 0.5);
 
         // Probabilities should sum to one
-        assert_relative_eq!(register.probability(vec![None]), 1.0);
+        assert_relative_eq!(register.probability(&vec![None]), 1.0);
     }
 
     #[test]
@@ -188,10 +186,10 @@ mod tests {
 
         let program = openqasm_parse_source(source.to_string(), Some(Path::new("./")));
         let register = openqasm_run_program(program);
-        assert_relative_eq!(register.probability(vec![Some(true), Some(false)]), 0.0);
-        assert_relative_eq!(register.probability(vec![Some(true), Some(true)]), 0.5);
-        assert_relative_eq!(register.probability(vec![Some(false), Some(false)]), 0.5);
-        assert_relative_eq!(register.probability(vec![None]), 1.0);
+        assert_relative_eq!(register.probability(&vec![Some(true), Some(false)]), 0.0);
+        assert_relative_eq!(register.probability(&vec![Some(true), Some(true)]), 0.5);
+        assert_relative_eq!(register.probability(&vec![Some(false), Some(false)]), 0.5);
+        assert_relative_eq!(register.probability(&vec![None]), 1.0);
     }
 
     #[test]
@@ -215,17 +213,17 @@ mod tests {
         
 
         // The cbit should have a 50/50 chance of being set
-        assert_relative_eq!(register.probability(vec![None, None, Some(true)]), 0.5);
-        assert_relative_eq!(register.probability(vec![None, None, Some(false)]), 0.5);
+        assert_relative_eq!(register.probability(&vec![None, None, Some(true)]), 0.5);
+        assert_relative_eq!(register.probability(&vec![None, None, Some(false)]), 0.5);
 
         //Each bit pattern 00, 01, 10, 11 in the qubits should have 25% prob
-        assert_relative_eq!(register.probability(vec![Some(false), Some(false), None]), 0.25);
-        assert_relative_eq!(register.probability(vec![Some(false), Some(true), None]), 0.25);
-        assert_relative_eq!(register.probability(vec![Some(true), Some(false), None]), 0.25);
-        assert_relative_eq!(register.probability(vec![Some(true), Some(true), None]), 0.25);
+        assert_relative_eq!(register.probability(&vec![Some(false), Some(false), None]), 0.25);
+        assert_relative_eq!(register.probability(&vec![Some(false), Some(true), None]), 0.25);
+        assert_relative_eq!(register.probability(&vec![Some(true), Some(false), None]), 0.25);
+        assert_relative_eq!(register.probability(&vec![Some(true), Some(true), None]), 0.25);
 
         // Probabilities should add to 1.0
-        assert_relative_eq!(register.probability(vec![None, None, None]), 1.0);
+        assert_relative_eq!(register.probability(&vec![None, None, None]), 1.0);
     }
 
     #[test]
@@ -265,13 +263,13 @@ mod tests {
         assert_abs_diff_eq!(amps[[0,0,0,0]].re, 0.5, epsilon = 0.0001);
 
         //Each bit pattern 1101, 0111, 1010, 0000 in all the bits should have 25% prob
-        assert_abs_diff_eq!(register.probability(vec![Some(true), Some(true), Some(false), Some(true)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(false), Some(true), Some(true), Some(true)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(true), Some(false), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(false), Some(false), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(true), Some(false), Some(true)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(true), Some(true), Some(true)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(false), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(false), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
 
         // Probabilities should add to 1.0
-        assert_relative_eq!(register.probability(vec![None, None, None]), 1.0, epsilon = 0.0001);
+        assert_relative_eq!(register.probability(&vec![None, None, None]), 1.0, epsilon = 0.0001);
     }
 
     #[test]
@@ -314,7 +312,7 @@ mod tests {
         // assert_abs_diff_eq!(register.probability(vec![Some(false), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
 
         // Probabilities should add to 1.0
-        assert_relative_eq!(register.probability(vec![None, None, None]), 1.0, epsilon = 0.0001);
+        assert_relative_eq!(register.probability(&vec![None, None, None]), 1.0, epsilon = 0.0001);
     }
 
 
@@ -340,13 +338,13 @@ mod tests {
         assert_eq!(register.bit_count() - register.visible_bit_count(), 1);
 
         //Each bit pattern 00, 01, 10, 11 in the qubits should have 25% prob
-        assert_abs_diff_eq!(register.probability(vec![Some(true), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(false), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(true), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(false), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
 
         // Probabilities should add to 1.0
-        assert_relative_eq!(register.probability(vec![None, None, None]), 1.0, epsilon = 0.0001);
+        assert_relative_eq!(register.probability(&vec![None, None, None]), 1.0, epsilon = 0.0001);
     }
 
     #[test]
@@ -374,7 +372,7 @@ mod tests {
         assert_eq!(register.bit_count() - register.visible_bit_count(), 1);
 
         //q[2] should have zero probability to be set
-        assert_abs_diff_eq!(register.probability(vec![None, None, Some(true)]), 0.0, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![None, None, Some(true)]), 0.0, epsilon = 0.0001);
 
         let amps = register.amplitudes().to_owned().into_dimensionality::<Ix4>().unwrap();
 
@@ -389,13 +387,13 @@ mod tests {
         assert_abs_diff_eq!(amps[[0,0,0,0]].re, 0.5, epsilon = 0.0001);
 
         //Each bit pattern 010, 110, 100, 000 in the qubits should have 25% prob
-        assert_abs_diff_eq!(register.probability(vec![Some(false), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(true), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(true), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(false), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(true), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(false), Some(false)]), 0.25, epsilon = 0.0001);
 
         // Probabilities should add to 1.0
-        assert_relative_eq!(register.probability(vec![None, None, None]), 1.0, epsilon = 0.0001);
+        assert_relative_eq!(register.probability(&vec![None, None, None]), 1.0, epsilon = 0.0001);
     }
 
     #[test]
@@ -429,12 +427,45 @@ mod tests {
         assert_abs_diff_eq!(amps[[1,1,1,1]].re,  0.5, epsilon = 0.0001);
 
         // each two bit pattern should have 25% probability
-        assert_abs_diff_eq!(register.probability(vec![Some(false), Some(true)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(true), Some(true)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(true), Some(false)]), 0.25, epsilon = 0.0001);
-        assert_abs_diff_eq!(register.probability(vec![Some(false), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(true)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(true)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(false)]), 0.25, epsilon = 0.0001);
 
         // Probabilities should add to 1.0
-        assert_relative_eq!(register.probability(vec![None, None, None]), 1.0, epsilon = 0.0001);
+        assert_relative_eq!(register.probability(&vec![None, None, None]), 1.0, epsilon = 0.0001);
+    }
+
+    #[test]
+    fn condition_measure_long_cbits() {
+        let source = r#"
+        OPENQASM 2.0;
+        include "qelib1.inc";
+        
+        qreg q[2];
+        creg c[3];
+        h q[0];
+        h q[1];
+        measure q[1] -> c[0];
+        if (c==0) z q[0];
+        measure q[0] -> c[0];
+        "#;
+
+        let program = openqasm_parse_source(source.to_string(), Some(Path::new("./")));
+        let register = openqasm_run_program(program);
+
+        println!("{:?}",register.amplitudes());
+
+        // This should have resulted in one hidden bit
+        assert_eq!(register.bit_count() - register.visible_bit_count(), 1);
+
+        // each two bit pattern should have 25% probability
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(true)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(true)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(true), Some(false)]), 0.25, epsilon = 0.0001);
+        assert_abs_diff_eq!(register.probability(&vec![Some(false), Some(false)]), 0.25, epsilon = 0.0001);
+
+        // Probabilities should add to 1.0
+        assert_relative_eq!(register.probability(&vec![None, None, None]), 1.0, epsilon = 0.0001);
     }
 }
