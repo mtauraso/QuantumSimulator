@@ -28,4 +28,4 @@ Note that the amplitudes are printed with the same names defined in the program.
 Tests can be run from the checked out source tree with `cargo test` All of the tests run sample code and do probability and/or amplitude checks to ensure quantum gates and other operations are performing correctly
 
 ## Sample circuits
-Sample circuits are in the `sample` directory. A few basic circuits are there for ease of use, many of them are originally from the OpenQASM spec with only slight modifications.
+Sample circuits are in the `sample` directory. They are copied directly from the OpenQASM spec, but serve to highlight the full funtionality of the simulator. `sample/ripplecarry.qasm` is a particularly complex test.
