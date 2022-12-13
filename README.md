@@ -24,8 +24,8 @@ You can also run quantum simulator with the `--trace` option, which will enumera
 
 Note that the amplitudes are printed with the same names defined in the program. The simulator also keeps track of hidden bits, which are detailed in [the paper](https://mtauraso.github.io/QuantumSimulator/LaTeX/QuantumSimulator.pdf)
 
-# Sample circuits
+## Tests
+Tests can be run from the checked out source tree with `cargo test` All of the tests run sample code and do probability and/or amplitude checks to ensure quantum gates and other operations are performing correctly
+
+## Sample circuits
 Sample circuits are in the `sample` directory. A few basic circuits are there for ease of use, many of them are originally from the OpenQASM spec with only slight modifications.
-
-
-Note:Deliverables would be program, source code, readme & getting started level documentation, screen-capture demo videos, and runnable sample circuits that the simulator can execute put up on a website. 
