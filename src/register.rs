@@ -131,7 +131,7 @@ impl QuantumRegister {
     }
 
     fn register_printable_helper(pinned_bits: &Vec<Option<bool>>, reg_extents_start:usize, register_extents: &HashMap<String, (usize, usize)> ) -> String {
-        let mut returnme = String::new();
+        let mut returnme:Vec<String> = Vec::new();
 
         for (key, (offset, size)) in register_extents.iter() {
             let mut all_unset = true;
@@ -151,10 +151,10 @@ impl QuantumRegister {
             }).collect();
 
             if all_unset == false {
-                returnme += format!("{}={}", key.as_str(), bit_pattern.join("").as_str()).as_str();
+                returnme.push(format!("{}={}", key.as_str(), bit_pattern.join("").as_str()));
             }
         }
-        returnme
+        returnme.join(",")
     }
 
     // Called from gatewriter when the number of bits is available
